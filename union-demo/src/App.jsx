@@ -635,6 +635,258 @@ function Avatar({ categoryKey, hasVideo, size = 44 }) {
 
 // ─── SIDE MENU ────────────────────────────────────────────────────────────────
 
+// ─── DESKTOP NEWSPAPER GRID ───────────────────────────────────────────────────
+
+function DesktopMainView({ onOpenQuestion, onOpenVoice, onCreate, onGoAbout, onGoArchive, onGoSaved, bookmarks, onBookmark }) {
+  const [activeRing, setActiveRing] = useState("all");
+  const [votes, setVotes] = useState({});
+  const [overlays, setOverlays] = useState({});
+  const [overlayOpacity, setOverlayOpacity] = useState({});
+
+  const fireVote = (id, v) => {
+    if (overlays[id]) return;
+    setOverlays(o => ({ ...o, [id]: v }));
+    setTimeout(() => setOverlayOpacity(o => ({ ...o, [id]: 1 })), 20);
+    setTimeout(() => setOverlayOpacity(o => ({ ...o, [id]: 0 })), 1500);
+    setTimeout(() => { setVotes(prev => ({ ...prev, [id]: v })); setOverlays(o => { const n = {...o}; delete n[id]; return n; }); }, 2000);
+  };
+
+  const allVoices    = activeRing === "all" ? voices    : voices.filter(v => v.ring === activeRing);
+  const allQuestions = activeRing === "all" ? questions : questions.filter(q => q.ring === activeRing);
+
+  const scored = [
+    ...allVoices.map(v    => ({ ...v, _type: "voice",    _score: v.upvotes * 1.5 })),
+    ...allQuestions.map(q => ({ ...q, _type: "question", _score: q.responses + q.directlyAffected })),
+  ].sort((a, b) => b._score - a._score);
+
+  const lead       = scored[0];
+  const secondary  = scored.slice(1, 3);
+  const medium     = scored.slice(3, 7);
+  const small      = scored.slice(7);
+
+  const VoiceGridCard = ({ item, size }) => {
+    const c = cat(item.category);
+    const isLead = size === "lead";
+    const isMed  = size === "medium";
+    return (
+      <div onClick={() => onOpenVoice(item.id)} style={{ background: "#FDFAF5", cursor: "pointer", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", transition: "opacity 0.15s" }}
+        onMouseEnter={e => e.currentTarget.style.opacity = "0.92"}
+        onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+        {/* Image */}
+        {(isLead || isMed) && (
+          <div style={{ height: isLead ? 280 : 160, background: item.gradient, position: "relative", flexShrink: 0 }}>
+            {item.imageUrl && <img src={item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} onError={e => e.target.style.display="none"} />}
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.05), rgba(0,0,0,0.6))" }} />
+            <div style={{ position: "absolute", bottom: 12, left: 14, display: "flex", gap: 6 }}>
+              <span style={{ background: "rgba(255,255,255,0.18)", color: "white", padding: "2px 8px", borderRadius: 2, fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>Voice</span>
+              <span style={{ background: "rgba(255,255,255,0.18)", color: "white", padding: "2px 8px", borderRadius: 2, fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{c.label}</span>
+            </div>
+          </div>
+        )}
+        {/* Content */}
+        <div style={{ padding: isLead ? "20px 22px" : "14px 16px", flex: 1, display: "flex", flexDirection: "column", borderLeft: `3px solid ${c.color}` }}>
+          {!isLead && !isMed && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <span style={{ background: c.bg, color: c.color, padding: "2px 7px", borderRadius: 2, fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>Voice</span>
+              <span style={{ background: c.bg, color: c.color, padding: "2px 7px", borderRadius: 2, fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{c.label}</span>
+            </div>
+          )}
+          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: isLead ? 28 : isMed ? 18 : 15, fontWeight: 700, lineHeight: 1.3, color: "#1A1208", marginBottom: 10, flex: isLead ? 0 : 1 }}>
+            {item.headline}
+          </h2>
+          {(isLead || isMed) && <p style={{ fontSize: 13, color: "#7A7068", lineHeight: 1.65, marginBottom: 12, flex: 1 }}>{item.preview}</p>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto", paddingTop: 10, borderTop: "1px solid #EAE4DA" }}>
+            <span style={{ fontFamily: "Playfair Display, serif", fontSize: 12, fontWeight: 700, fontStyle: "italic", color: "#1A1208" }}>{item.signature}</span>
+            <span style={{ fontSize: 10, color: "#C0B8AE" }}>·</span>
+            <span style={{ fontSize: 11, color: "#A09488" }}>{item.region}</span>
+            <span style={{ fontSize: 11, color: "#A09488", marginLeft: "auto" }}>▲ {fmt(item.upvotes)}</span>
+            <BookmarkBtn id={item.id} type="voice" bookmarks={bookmarks} onBookmark={onBookmark} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const QuestionGridCard = ({ item, size }) => {
+    const c   = cat(item.category);
+    const myVote    = votes[item.id];
+    const myOverlay = overlays[item.id];
+    const myOpacity = overlayOpacity[item.id] || 0;
+    const isLead    = size === "lead";
+    const isMed     = size === "medium";
+    return (
+      <div style={{ background: "#FDFAF5", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative", borderLeft: `4px solid ${c.color}` }}>
+        {/* Vote overlay */}
+        {myOverlay && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 20, background: myOverlay === "yes" ? "rgba(21,92,42,0.85)" : "rgba(122,21,21,0.85)", opacity: myOpacity, transition: myOpacity === 1 ? "opacity 0.25s" : "opacity 0.45s", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, pointerEvents: "none" }}>
+            <span style={{ fontSize: 40, color: "white" }}>{myOverlay === "yes" ? "✓" : "✗"}</span>
+            <span style={{ fontFamily: "Inter, sans-serif", fontSize: 32, fontWeight: 800, color: "white", letterSpacing: "4px" }}>{myOverlay === "yes" ? "YES" : "NO"}</span>
+          </div>
+        )}
+        <div style={{ padding: isLead ? "20px 22px" : "14px 16px", flex: 1, display: "flex", flexDirection: "column" }}>
+          <CategoryBadge categoryKey={item.category} style={{ marginBottom: 10, alignSelf: "flex-start" }} />
+          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: isLead ? 26 : isMed ? 17 : 14, fontWeight: 700, lineHeight: 1.3, color: "#1A1208", marginBottom: 12, flex: 1 }}>
+            {item.question}
+          </h2>
+          {item.topResponse && (isLead || isMed) && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 14, background: "#F5F0E8", borderRadius: 6, padding: "10px 12px" }}>
+              <Avatar categoryKey={item.category} size={28} />
+              <p style={{ fontFamily: "Playfair Display, serif", fontSize: 12, fontStyle: "italic", color: "#3A322A", lineHeight: 1.55 }}>"{item.topResponse.quote}"</p>
+            </div>
+          )}
+          {!myVote ? (
+            <div style={{ marginTop: "auto" }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                {[
+                  { key: "yes", label: "✓ Yes", hC: "#155C2A", hBg: "#E8F5EC", hBr: "#AADCBC" },
+                  { key: "no",  label: "✗ No",  hC: "#7A1515", hBg: "#FAE8E8", hBr: "#E8BCBC" },
+                  { key: "unsure", label: "Unsure", hC: "#5A4A3A", hBg: "#F0EBE3", hBr: "#C8B8A4" },
+                ].map(({ key, label, hC, hBg, hBr }) => (
+                  <button key={key} onClick={() => key === "unsure" ? setVotes(v => ({...v, [item.id]: "unsure"})) : fireVote(item.id, key)}
+                    style={{ flex: 1, padding: "7px 4px", border: "1.5px solid #D4CAB8", borderRadius: 6, background: "#F5F0E8", color: "#7A7068", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "Inter", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = hBr; e.currentTarget.style.background = hBg; e.currentTarget.style.color = hC; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#D4CAB8"; e.currentTarget.style.background = "#F5F0E8"; e.currentTarget.style.color = "#7A7068"; }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <PollBar poll={item.poll} />
+            </div>
+          ) : (
+            <div style={{ marginTop: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: myVote === "yes" ? "#155C2A" : myVote === "no" ? "#7A1515" : "#5A4A3A" }}>
+                  {myVote === "yes" ? "✓ Voted Yes" : myVote === "no" ? "✗ Voted No" : "Voted Unsure"}
+                </span>
+                <button onClick={() => setVotes(v => ({...v, [item.id]: null}))} style={{ fontSize: 10, color: "#B8AFA4", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontFamily: "Inter" }}>Change</button>
+                <button onClick={() => onOpenQuestion(item.id)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#1C3A5E", fontFamily: "Inter" }}>Read responses →</button>
+                <BookmarkBtn id={item.id} type="question" bookmarks={bookmarks} onBookmark={onBookmark} />
+              </div>
+              <PollBar poll={item.poll} />
+            </div>
+          )}
+          {!myVote && (
+            <div style={{ display: "flex", gap: 14, marginTop: 10, paddingTop: 10, borderTop: "1px solid #EAE4DA" }}>
+              <span style={{ fontSize: 11, color: "#A09488" }}>{fmt(item.responses)} responses</span>
+              <span style={{ fontSize: 11, color: "#7A1515", fontWeight: 600 }}>{fmt(item.directlyAffected)} affected</span>
+              <button onClick={() => onOpenQuestion(item.id)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#1C3A5E", fontFamily: "Inter" }}>Read responses →</button>
+              <BookmarkBtn id={item.id} type="question" bookmarks={bookmarks} onBookmark={onBookmark} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCard = (item, size) => item._type === "voice"
+    ? <VoiceGridCard    key={`${item._type}-${item.id}`} item={item} size={size} />
+    : <QuestionGridCard key={`${item._type}-${item.id}`} item={item} size={size} />;
+
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#EDE8DF", fontFamily: "Inter, sans-serif" }}>
+      <style>{FONTS}</style>
+
+      {/* Desktop header */}
+      <header style={{ background: "linear-gradient(180deg, #0F1F3D 0%, #142544 100%)", boxShadow: "0 2px 16px rgba(0,0,0,0.25)" }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 32px", height: 70, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+            {[
+              { key: "all",      label: "All"      },
+              { key: "global",   label: "Global"   },
+              { key: "regional", label: "Regional" },
+              { key: "local",    label: "Local"    },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => setActiveRing(key)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "Inter", fontSize: 12, fontWeight: 700, color: activeRing === key ? "#FFFFFF" : "rgba(255,255,255,0.4)", borderBottom: activeRing === key ? "2px solid #FFFFFF" : "2px solid transparent", padding: "4px 0", transition: "color 0.15s" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <span style={{ fontFamily: "Playfair Display, serif", color: "#FFFFFF", fontSize: 48, fontWeight: 700, letterSpacing: "-2px", lineHeight: 1 }}>Union</span>
+
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <button onClick={onGoSaved} style={{ background: "none", border: "none", cursor: "pointer", color: bookmarks.length > 0 ? "#F5C842" : "rgba(255,255,255,0.4)", fontSize: 18 }}>
+              {bookmarks.length > 0 ? "★" : "☆"}
+            </button>
+            <button onClick={onCreate} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 4, padding: "7px 16px", color: "#FFFFFF", fontSize: 12, cursor: "pointer", fontFamily: "Inter", fontWeight: 600 }}>
+              + Create
+            </button>
+            <button onClick={onGoAbout} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "Playfair Display, serif", fontSize: 12, color: "rgba(255,255,255,0.4)", fontStyle: "italic" }}
+              onMouseEnter={e => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.4)"}>
+              What we stand for
+            </button>
+          </div>
+        </div>
+
+        {/* Date bar */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "6px 32px", display: "flex", justifyContent: "center" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 600 }}>{today}</span>
+        </div>
+      </header>
+
+      {/* Newspaper grid */}
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 24px 48px" }}>
+
+        {/* Row 1: Lead + two secondary */}
+        {lead && (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1px", background: "#C0B8AE", marginTop: 24, marginBottom: "1px" }}>
+            <div style={{ background: "#FDFAF5" }}>{renderCard(lead, "lead")}</div>
+            <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: "1px", background: "#C0B8AE" }}>
+              {secondary.map(item => (
+                <div key={`s-${item._type}-${item.id}`} style={{ background: "#FDFAF5" }}>{renderCard(item, "medium")}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Divider with section label */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 0", borderTop: "2px solid #1A1208", borderBottom: "1px solid #D4CAB8", marginBottom: "1px" }}>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "1.5px", color: "#1A1208" }}>More from Union</span>
+          <div style={{ flex: 1, height: 1, background: "#D4CAB8" }} />
+        </div>
+
+        {/* Row 2: 4 medium cards */}
+        {medium.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1px", background: "#C0B8AE", marginBottom: "1px" }}>
+            {medium.map(item => (
+              <div key={`m-${item._type}-${item.id}`} style={{ background: "#FDFAF5" }}>{renderCard(item, "medium")}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Divider */}
+        <div style={{ borderTop: "1px solid #D4CAB8", borderBottom: "1px solid #D4CAB8", padding: "10px 0", marginBottom: "1px", display: "flex", alignItems: "center", gap: 16 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "1.5px", color: "#A09488" }}>Today's full feed</span>
+          <div style={{ flex: 1, height: 1, background: "#D4CAB8" }} />
+        </div>
+
+        {/* Row 3+: small cards — 4 per row */}
+        {small.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1px", background: "#C0B8AE" }}>
+            {small.map(item => (
+              <div key={`sm-${item._type}-${item.id}`} style={{ background: "#FDFAF5" }}>{renderCard(item, "small")}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ textAlign: "center", padding: "32px 0 16px", borderTop: "1px solid #D4CAB8", marginTop: 24 }}>
+          <button onClick={onGoAbout} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "Playfair Display, serif", fontSize: 14, color: "#B8AFA4", fontStyle: "italic" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#1C3A5E"}
+            onMouseLeave={e => e.currentTarget.style.color = "#B8AFA4"}>
+            What Union stands for →
+          </button>
+          <p style={{ fontSize: 11, color: "#C8C0B4", marginTop: 8 }}>Est. 2026 · Non-profit · Open source</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SideMenu({ open, onClose, activeTab, onSetTab, activeRing, onSetRing, onGoSaved, onGoAbout, onCreate, onGoArchive, bookmarks }) {
   return (
     <>
@@ -2527,6 +2779,13 @@ export default function App() {
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [selectedVoice, setSelectedVoice]       = useState(null);
   const [bookmarks, setBookmarks]               = useState([]);
+  const [isDesktop, setIsDesktop]               = useState(window.innerWidth >= 768);
+
+  useEffect(() => {
+    const handler = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   const toggleBookmark = (item) => {
     setBookmarks(prev => {
@@ -2556,7 +2815,9 @@ export default function App() {
   if (view === "signup")
     return <OnboardingFlow onComplete={goMain} />;
   if (view === "main")
-    return <MainView onOpenQuestion={goDetail} onOpenVoice={goVoice} onCreate={goCreate} onGoAbout={goAbout} onGoArchive={goArchive} onGoSaved={goSaved} {...bProps} />;
+    return isDesktop
+      ? <DesktopMainView onOpenQuestion={goDetail} onOpenVoice={goVoice} onCreate={goCreate} onGoAbout={goAbout} onGoArchive={goArchive} onGoSaved={goSaved} {...bProps} />
+      : <MainView onOpenQuestion={goDetail} onOpenVoice={goVoice} onCreate={goCreate} onGoAbout={goAbout} onGoArchive={goArchive} onGoSaved={goSaved} {...bProps} />;
   if (view === "saved")
     return <SavedView onBack={goMain} onOpenQuestion={goDetail} onOpenVoice={goVoice} {...bProps} />;
   if (view === "archive")
